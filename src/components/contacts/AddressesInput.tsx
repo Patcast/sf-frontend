@@ -48,6 +48,7 @@ function AddressRow({
   onRemove: () => void;
 }) {
   const typeId = `address-${index}-type`;
+  const typeErrorId = `${typeId}-error`;
 
   return (
     <div className="space-y-4 rounded-md border border-border bg-card p-4">
@@ -67,6 +68,8 @@ function AddressRow({
                 ? initial.type
                 : "home"
             }
+            aria-invalid={errors?.type ? true : undefined}
+            aria-describedby={errors?.type ? typeErrorId : undefined}
             className={`${CONTROL} ${borderClass(errors?.type)} w-auto pr-8`}
           >
             {ADDRESS_TYPES.map((type) => (
@@ -75,6 +78,15 @@ function AddressRow({
               </option>
             ))}
           </select>
+          {errors?.type ? (
+            <p
+              id={typeErrorId}
+              role="alert"
+              className="mt-1.5 text-[13px] text-destructive"
+            >
+              {errors.type}
+            </p>
+          ) : null}
         </div>
 
         <Button variant="ghost" size="sm" onClick={onRemove}>
@@ -157,6 +169,23 @@ export default function AddressesInput({
     () => (defaultValue ?? []).map((initial, key) => ({ key, initial })),
   );
 
+  // `rowErrors` is keyed by each row's position at submit time. Removing a row
+  // shifts the ones below it, so remember which key sat at each position when
+  // this batch of errors arrived and resolve errors through that snapshot —
+  // otherwise a removal would pin a row's error onto its neighbour.
+  const [errorOwners, setErrorOwners] = useState<{
+    errors?: Record<number, AddressFieldErrors>;
+    keys: number[];
+  }>({ errors: undefined, keys: [] });
+  if (errorOwners.errors !== rowErrors) {
+    setErrorOwners({ errors: rowErrors, keys: rows.map((row) => row.key) });
+  }
+
+  function errorsFor(key: number): AddressFieldErrors | undefined {
+    const submittedIndex = errorOwners.keys.indexOf(key);
+    return submittedIndex === -1 ? undefined : rowErrors?.[submittedIndex];
+  }
+
   function addRow() {
     setRows((current) => {
       if (current.length >= MAX_ADDRESSES) return current;
@@ -182,7 +211,7 @@ export default function AddressesInput({
             key={row.key}
             index={index}
             initial={row.initial}
-            errors={rowErrors?.[index]}
+            errors={errorsFor(row.key)}
             onRemove={() => removeRow(row.key)}
           />
         ))
