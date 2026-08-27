@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { MapPin, Plus, Trash2 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import { CONTROL } from "@/components/ui/Field";
@@ -186,12 +186,15 @@ export default function AddressesInput({
     return submittedIndex === -1 ? undefined : rowErrors?.[submittedIndex];
   }
 
+  // Keys must never be reused: `errorOwners` resolves errors by key, so a
+  // recycled key would resurrect a removed row's error on a fresh row.
+  const nextKey = useRef((defaultValue ?? []).length);
+
   function addRow() {
-    setRows((current) => {
-      if (current.length >= MAX_ADDRESSES) return current;
-      const key = current.reduce((max, row) => Math.max(max, row.key), -1) + 1;
-      return [...current, { key, initial: EMPTY_ROW }];
-    });
+    if (rows.length >= MAX_ADDRESSES) return;
+    const key = nextKey.current;
+    nextKey.current += 1;
+    setRows((current) => [...current, { key, initial: EMPTY_ROW }]);
   }
 
   function removeRow(key: number) {
