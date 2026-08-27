@@ -1,7 +1,9 @@
 import "server-only";
 
 import { ApiError, apiFetch, apiJson } from "@/lib/apiClient";
+import type { ParsedFieldErrors } from "./schema";
 import type {
+  AddressFieldErrors,
   Contact,
   ContactInput,
   ContactPage,
@@ -122,20 +124,25 @@ export function apiErrorMessage(error: ApiError, fallback: string): string {
 
 /**
  * Turn a 422 `HTTPValidationError` into per-field messages. FastAPI reports the
- * location as `["body", "<field>"]`, so the second element is the input name.
+ * location as `["body", "<field>"]` for scalars and
+ * `["body", "addresses", <row>, "<field>"]` inside the address list.
  */
-export function toFieldErrors(
-  error: ApiError,
-): Partial<Record<keyof ContactInput, string>> {
+export function toFieldErrors(error: ApiError): ParsedFieldErrors {
   const detail = error.json<{ detail?: ValidationIssue[] }>()?.detail;
-  if (!Array.isArray(detail)) return {};
+  const fieldErrors: ParsedFieldErrors["fieldErrors"] = {};
+  const addressErrors: ParsedFieldErrors["addressErrors"] = {};
+  if (!Array.isArray(detail)) return { fieldErrors, addressErrors };
 
-  const fieldErrors: Partial<Record<keyof ContactInput, string>> = {};
   for (const issue of detail) {
-    const field = issue.loc?.[issue.loc.length - 1];
-    if (typeof field === "string" && field !== "body") {
-      fieldErrors[field as keyof ContactInput] ??= issue.msg;
+    const [, root, index, field] = issue.loc ?? [];
+    if (root === "addresses" && typeof index === "number") {
+      if (typeof field === "string") {
+        const row = (addressErrors[index] ??= {});
+        row[field as keyof AddressFieldErrors] ??= issue.msg;
+      }
+    } else if (typeof root === "string") {
+      fieldErrors[root as keyof ContactInput] ??= issue.msg;
     }
   }
-  return fieldErrors;
+  return { fieldErrors, addressErrors };
 }

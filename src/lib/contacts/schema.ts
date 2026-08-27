@@ -1,5 +1,11 @@
 import { z } from "zod";
-import type { ContactInput } from "./types";
+import {
+  ADDRESS_TYPES,
+  type AddressFieldErrors,
+  type AddressInput,
+  type ContactInput,
+  type RawAddressValues,
+} from "./types";
 
 /**
  * Client/server-shared validation for the contact form.
@@ -32,6 +38,19 @@ function requiredText(max: number, label: string) {
 export const PHOTO_DATA_URL = /^data:image\/(png|jpeg|webp|gif);base64,/;
 export const PHOTO_MAX_LENGTH = 1_400_000; // ~1 MB of image, base64-encoded
 
+/** Mirrors the API's cap on addresses per contact. */
+export const MAX_ADDRESSES = 20;
+
+/** One address row, matching the API's `AddressCreate`. */
+export const addressInputSchema = z.object({
+  type: z.enum(ADDRESS_TYPES, "Choose Home, Work, or Other"),
+  street: requiredText(300, "Street"),
+  city: optionalText(120, "City"),
+  state: optionalText(120, "State"),
+  postal_code: optionalText(20, "Postal code"),
+  country: optionalText(120, "Country"),
+}) satisfies z.ZodType<AddressInput, unknown>;
+
 export const contactInputSchema = z.object({
   first_name: requiredText(100, "First name"),
   last_name: requiredText(100, "Last name"),
@@ -45,11 +64,10 @@ export const contactInputSchema = z.object({
   phone: optionalText(40, "Phone"),
   company: optionalText(200, "Company"),
   job_title: optionalText(200, "Job title"),
-  address: optionalText(300, "Address"),
-  city: optionalText(120, "City"),
-  state: optionalText(120, "State"),
-  postal_code: optionalText(20, "Postal code"),
-  country: optionalText(120, "Country"),
+  addresses: z
+    .array(addressInputSchema)
+    .max(MAX_ADDRESSES, `A contact can have at most ${MAX_ADDRESSES} addresses`)
+    .default([]),
   notes: z
     .string()
     .trim()
@@ -69,20 +87,32 @@ export const contactInputSchema = z.object({
     ),
 }) satisfies z.ZodType<ContactInput, unknown>;
 
-export type ContactFormValues = z.input<typeof contactInputSchema>;
+export interface ParsedFieldErrors {
+  fieldErrors: Partial<Record<keyof ContactInput, string>>;
+  addressErrors: Record<number, AddressFieldErrors>;
+}
 
-/** Collapse a ZodError into one message per field, keyed by input name. */
-export function zodFieldErrors(
-  error: z.ZodError,
-): Partial<Record<keyof ContactInput, string>> {
-  const fieldErrors: Partial<Record<keyof ContactInput, string>> = {};
+/**
+ * Collapse a ZodError into one message per field. Scalar issues key by input
+ * name; issues inside `addresses[i]` key by row index and address field, and a
+ * list-level issue (too many rows) lands on `fieldErrors.addresses`.
+ */
+export function zodFieldErrors(error: z.ZodError): ParsedFieldErrors {
+  const fieldErrors: ParsedFieldErrors["fieldErrors"] = {};
+  const addressErrors: ParsedFieldErrors["addressErrors"] = {};
+
   for (const issue of error.issues) {
-    const key = issue.path[0];
-    if (typeof key === "string" && !(key in fieldErrors)) {
-      fieldErrors[key as keyof ContactInput] = issue.message;
+    const [root, index, field] = issue.path;
+    if (root === "addresses" && typeof index === "number") {
+      const row = (addressErrors[index] ??= {});
+      if (typeof field === "string" && !(field in row)) {
+        row[field as keyof AddressFieldErrors] = issue.message;
+      }
+    } else if (typeof root === "string" && !(root in fieldErrors)) {
+      fieldErrors[root as keyof ContactInput] = issue.message;
     }
   }
-  return fieldErrors;
+  return { fieldErrors, addressErrors };
 }
 
 /* ------------------------------------------------------------------ */
@@ -168,48 +198,6 @@ export const CONTACT_FIELD_GROUPS: ContactFieldGroup[] = [
     ],
   },
   {
-    title: "Address",
-    description: "Optional postal details.",
-    fields: [
-      {
-        name: "address",
-        label: "Street address",
-        maxLength: 300,
-        placeholder: "1 Market St, Suite 400",
-        autoComplete: "street-address",
-        wide: true,
-      },
-      {
-        name: "city",
-        label: "City",
-        maxLength: 120,
-        placeholder: "San Francisco",
-        autoComplete: "address-level2",
-      },
-      {
-        name: "state",
-        label: "State / region",
-        maxLength: 120,
-        placeholder: "CA",
-        autoComplete: "address-level1",
-      },
-      {
-        name: "postal_code",
-        label: "Postal code",
-        maxLength: 20,
-        placeholder: "94105",
-        autoComplete: "postal-code",
-      },
-      {
-        name: "country",
-        label: "Country",
-        maxLength: 120,
-        placeholder: "USA",
-        autoComplete: "country-name",
-      },
-    ],
-  },
-  {
     title: "Notes",
     description: "Anything worth remembering. No length limit.",
     fields: [
@@ -229,18 +217,105 @@ export const CONTACT_FIELDS: ContactFieldSpec[] = CONTACT_FIELD_GROUPS.flatMap(
   (group) => group.fields,
 );
 
-/** Pull the contact fields out of a submitted form, as raw strings. */
-export function formDataToValues(
-  formData: FormData,
-): Record<keyof ContactInput, string> {
+/** The text inputs of one address row, in display order. */
+export const ADDRESS_FIELDS: {
+  name: Exclude<keyof AddressInput, "type">;
+  label: string;
+  required?: boolean;
+  maxLength: number;
+  placeholder?: string;
+  autoComplete: string;
+  wide?: boolean;
+}[] = [
+  {
+    name: "street",
+    label: "Street",
+    required: true,
+    maxLength: 300,
+    placeholder: "1 Market St, Suite 400",
+    autoComplete: "street-address",
+    wide: true,
+  },
+  {
+    name: "city",
+    label: "City",
+    maxLength: 120,
+    placeholder: "San Francisco",
+    autoComplete: "address-level2",
+  },
+  {
+    name: "state",
+    label: "State / region",
+    maxLength: 120,
+    placeholder: "CA",
+    autoComplete: "address-level1",
+  },
+  {
+    name: "postal_code",
+    label: "Postal code",
+    maxLength: 20,
+    placeholder: "94105",
+    autoComplete: "postal-code",
+  },
+  {
+    name: "country",
+    label: "Country",
+    maxLength: 120,
+    placeholder: "USA",
+    autoComplete: "country-name",
+  },
+];
+
+/** `addresses[3].street` → the input name for one field of one address row. */
+export function addressInputName(
+  index: number,
+  field: keyof AddressInput,
+): string {
+  return `addresses[${index}].${field}`;
+}
+
+const ADDRESS_INPUT_NAME = /^addresses\[(\d+)\]\.(type|street|city|state|postal_code|country)$/;
+
+/**
+ * Pull the contact fields out of a submitted form, as raw strings. Address rows
+ * arrive as `addresses[i].field` inputs; rows are rebuilt in index order (gaps
+ * from removed rows are simply skipped).
+ */
+export function formDataToValues(formData: FormData): {
+  addresses: RawAddressValues[];
+} & Record<Exclude<keyof ContactInput, "addresses">, string> {
+  const rows = new Map<number, Partial<RawAddressValues>>();
+  for (const key of formData.keys()) {
+    const match = ADDRESS_INPUT_NAME.exec(key);
+    if (!match) continue;
+    const index = Number(match[1]);
+    const field = match[2] as keyof RawAddressValues;
+    const row = rows.get(index) ?? {};
+    row[field] = String(formData.get(key) ?? "");
+    rows.set(index, row);
+  }
+
+  const addresses = [...rows.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([, row]) => ({
+      type: "",
+      street: "",
+      city: "",
+      state: "",
+      postal_code: "",
+      country: "",
+      ...row,
+    }));
+
   return {
     ...(Object.fromEntries(
       CONTACT_FIELDS.map((field) => [
         field.name,
         String(formData.get(field.name) ?? ""),
       ]),
-    ) as Record<keyof ContactInput, string>),
+    ) as Record<Exclude<keyof ContactInput, "addresses">, string>),
     // The photo is a hidden input managed by PhotoInput, not a CONTACT_FIELDS entry.
     photo: String(formData.get("photo") ?? ""),
+    addresses,
   };
 }
