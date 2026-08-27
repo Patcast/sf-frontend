@@ -57,8 +57,13 @@ export default function PhotoInput({
   const [photo, setPhoto] = useState(defaultValue ?? "");
   const [localError, setLocalError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Conversions are async, so a slow one could finish after a newer selection
+  // (or after Remove) and clobber it. Each user action bumps the token; a
+  // conversion only lands if its token is still the latest.
+  const operationRef = useRef(0);
 
   async function onFileChange(files: FileList | null) {
+    const operation = ++operationRef.current;
     const file = files?.item(0);
     if (!file) return;
 
@@ -72,15 +77,24 @@ export default function PhotoInput({
     }
 
     try {
-      setPhoto(await fileToDataUrl(file));
+      const dataUrl = await fileToDataUrl(file);
+      if (operationRef.current !== operation) return;
+      setPhoto(dataUrl);
       setLocalError(null);
     } catch (cause) {
+      if (operationRef.current !== operation) return;
       setLocalError(
         cause instanceof Error && cause.message
           ? cause.message
           : "Could not read that image.",
       );
     }
+  }
+
+  function removePhoto() {
+    operationRef.current += 1;
+    setPhoto("");
+    setLocalError(null);
   }
 
   const message = localError ?? error;
@@ -113,7 +127,7 @@ export default function PhotoInput({
             {photo ? "Replace photo" : "Upload photo"}
           </Button>
           {photo ? (
-            <Button variant="ghost" size="sm" onClick={() => setPhoto("")}>
+            <Button variant="ghost" size="sm" onClick={removePhoto}>
               Remove
             </Button>
           ) : null}
