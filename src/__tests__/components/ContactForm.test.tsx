@@ -32,8 +32,25 @@ describe("ContactForm", () => {
 
     expect(screen.getByLabelText(/first name/i)).toHaveValue("Ada");
     expect(screen.getByLabelText(/^email/i)).toHaveValue("ada@example.com");
-    // Nulls become empty inputs rather than the string "null".
-    expect(screen.getByLabelText(/street address/i)).toHaveValue("");
+    // The fixture's two addresses become editable rows, nulls as empty inputs.
+    const streets = screen.getAllByLabelText(/street/i);
+    expect(streets).toHaveLength(2);
+    expect(streets[0]).toHaveValue("1 Market St");
+    expect(screen.getAllByLabelText(/postal code/i)[0]).toHaveValue("");
+  });
+
+  it("adds and removes address rows", async () => {
+    renderForm(jest.fn());
+
+    expect(screen.queryByLabelText(/street/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/no addresses yet/i)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /add address/i }));
+    expect(screen.getByLabelText(/street/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/type/i)).toHaveValue("home");
+
+    await userEvent.click(screen.getByRole("button", { name: /remove/i }));
+    expect(screen.queryByLabelText(/street/i)).not.toBeInTheDocument();
   });
 
   it("submits the entered values to the action", async () => {

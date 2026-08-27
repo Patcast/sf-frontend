@@ -45,7 +45,7 @@ export async function saveContactAction(
     return {
       status: "error",
       message: "Please fix the highlighted fields.",
-      fieldErrors: zodFieldErrors(parsed.error),
+      ...zodFieldErrors(parsed.error),
       values,
     };
   }
@@ -75,7 +75,7 @@ export async function saveContactAction(
         return {
           status: "error",
           message: "The API rejected these values.",
-          fieldErrors: toFieldErrors(error),
+          ...toFieldErrors(error),
           values,
         };
       }
