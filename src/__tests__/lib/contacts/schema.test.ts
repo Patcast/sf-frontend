@@ -19,9 +19,13 @@ function values(overrides: Record<string, string> = {}) {
     postal_code: "",
     country: "",
     notes: "",
+    photo: "",
     ...overrides,
   };
 }
+
+const PHOTO =
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 
 describe("contactInputSchema", () => {
   it("lowercases the email and nulls out the blanks", () => {
@@ -56,6 +60,19 @@ describe("contactInputSchema", () => {
     expect(zodFieldErrors(result.error!).email).toBe("Enter a valid email address");
   });
 
+  it("accepts an image data URL as the photo", () => {
+    expect(contactInputSchema.parse(values({ photo: PHOTO })).photo).toBe(PHOTO);
+  });
+
+  it("rejects a photo that is not an image data URL", () => {
+    const result = contactInputSchema.safeParse(
+      values({ photo: "https://example.com/ada.png" }),
+    );
+    expect(zodFieldErrors(result.error!).photo).toBe(
+      "Photo must be a PNG, JPEG, WebP, or GIF image",
+    );
+  });
+
   it("enforces the API's length limits", () => {
     const result = contactInputSchema.safeParse(
       values({ first_name: "a".repeat(101), postal_code: "9".repeat(21) }),
@@ -80,7 +97,7 @@ describe("formDataToValues", () => {
     expect(extracted.first_name).toBe("Grace");
     expect(extracted.last_name).toBe("");
     expect(Object.keys(extracted).sort()).toEqual(
-      CONTACT_FIELDS.map((field) => field.name).sort(),
+      [...CONTACT_FIELDS.map((field) => field.name), "photo"].sort(),
     );
   });
 });
