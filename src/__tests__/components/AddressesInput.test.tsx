@@ -37,6 +37,24 @@ describe("AddressesInput", () => {
     expect(screen.getByText("Street is required")).toBeInTheDocument();
   });
 
+  it("does not resurrect a removed row's error on a newly added row", async () => {
+    render(
+      <AddressesInput
+        defaultValue={[makeRow(), makeRow({ street: "" })]}
+        rowErrors={{ 1: { street: "Street is required" } }}
+      />,
+    );
+
+    // Remove the invalid row, then add a fresh one in its place.
+    await userEvent.click(screen.getAllByRole("button", { name: /remove/i })[1]);
+    await userEvent.click(screen.getByRole("button", { name: /add address/i }));
+
+    expect(screen.queryByText("Street is required")).not.toBeInTheDocument();
+    expect(screen.getAllByLabelText(/street/i)[1]).not.toHaveAttribute(
+      "aria-invalid",
+    );
+  });
+
   it("renders the type error as an accessible message", () => {
     render(
       <AddressesInput
