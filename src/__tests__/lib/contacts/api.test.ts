@@ -24,11 +24,9 @@ const INPUT: ContactInput = {
   phone: null,
   company: null,
   job_title: null,
-  address: null,
-  city: null,
-  state: null,
-  postal_code: null,
-  country: null,
+  addresses: [
+    { type: "home", street: "1 Market St", city: null, state: null, postal_code: null, country: null },
+  ],
   notes: null,
   photo: null,
 };
@@ -145,24 +143,33 @@ describe("error translation", () => {
     );
   });
 
-  it("maps a 422 body onto field names", () => {
+  it("maps a 422 body onto field names, address issues onto their row", () => {
     const error = new ApiError(
       422,
       JSON.stringify({
         detail: [
           { loc: ["body", "email"], msg: "value is not a valid email address" },
           { loc: ["body", "first_name"], msg: "String should have at least 1 character" },
+          { loc: ["body", "addresses", 1, "street"], msg: "String should have at least 1 character" },
         ],
       }),
     );
 
     expect(toFieldErrors(error)).toEqual({
-      email: "value is not a valid email address",
-      first_name: "String should have at least 1 character",
+      fieldErrors: {
+        email: "value is not a valid email address",
+        first_name: "String should have at least 1 character",
+      },
+      addressErrors: {
+        1: { street: "String should have at least 1 character" },
+      },
     });
   });
 
   it("returns nothing for a non-validation body", () => {
-    expect(toFieldErrors(new ApiError(500, "boom"))).toEqual({});
+    expect(toFieldErrors(new ApiError(500, "boom"))).toEqual({
+      fieldErrors: {},
+      addressErrors: {},
+    });
   });
 });
